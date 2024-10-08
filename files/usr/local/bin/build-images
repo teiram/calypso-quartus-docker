@@ -1,0 +1,17 @@
+#!/bin/bash -l
+
+BUILD_DIR=/build
+QUARTUS_EXE=/root/quartus/quartus/bin/quartus_sh
+
+test -d $BUILD && cd $BUILD
+
+echo "In build directory"
+ls 
+
+git clone https://github.com/teiram/calypso-ports.git
+
+cd calypso-ports/menu
+$QUARTUS_EXE --flow compile menu
+if [$? -eq 0]; then
+	echo "Compilation successful"
+fi
