@@ -1,17 +1,74 @@
 #!/bin/bash -l
 
-BUILD_DIR=/build
-QUARTUS_EXE=/root/quartus/quartus/bin/quartus_sh
+QUARTUS_EXE=/opt/intelFPGA/quartus/bin/quartus_sh
+CORE_DEFINITION_TEMPLATE=core.definition
 
-test -d $BUILD && cd $BUILD
+echo "** Environment"
+env
 
-echo "In build directory"
-ls 
+echo "** Current directory"
+pwd
 
+
+# We probably can remove this check since we are running the docker
+# with explicit drive mappings
+if [ ! -v GITHUB_WORKSPACE ]; then
+	echo "** GITHUB_WORKSPACE variable not defined. Asuming test mode (using /build)"
+	GITHUB_WORKSPACE=/build
+else
+	echo "** GITHUB_WORKSPACE is ${GITHUB_WORKSPACE}"
+fi
+
+# Setup git configuration to be able to commit and push the new 
+# artifacts if any
+git config user.name github-actions
+git config user.email github-actions@github.com
+
+cd $GITHUB_WORKSPACE
+mkdir staging && cd staging
 git clone https://github.com/teiram/calypso-ports.git
+BASEDIR_REPO="${GITHUB_WORKSPACE}"
 
-cd calypso-ports/menu
-$QUARTUS_EXE --flow compile menu
-if [$? -eq 0]; then
-	echo "Compilation successful"
+NUM_SUCCESS_CORES=0
+NUM_ERROR_CORES=0
+for CORE_DEFINITION in $(find . -type f -name ${CORE_DEFINITION_TEMPLATE}); do
+	echo "* Processing ${CORE_DEFINITION}"
+    SRCPATH="$(dirname $CORE_DEFINITION)"
+    eval $(cat $CORE_DEFINITION)  #TODO: Make this safer
+    echo "** Found project: $PROJECT_NAME"
+    echo "** Core Id: $CORE_ID"
+    echo "** Version: $VERSION"
+    echo "** Bistream file: $BITSTREAM_FILE"
+    CORE_DST_DIR="${GITHUB_WORKSPACE}/${CORE_ID}"
+    CORE_DST_NAME="${CORE_ID}-v${VERSION}.rbf"
+    CORE_DST_FILE="${CORE_DST_DIR}/${CORE_DST_NAME}"
+    if [ ! -f ${CORE_DST_FILE} ]; then
+    	echo "Generating bitstream file for project ${PROJECT_NAME} in version ${VERSION}"
+    	cd $SRCPATH
+    	git submodule update --init --recursive .
+    	$QUARTUS_EXE --flow compile $PROJECT_NAME
+    	if [ $? -eq 0 ]; then
+        	echo "** Compilation successful for $PROJECT_NAME in version $VERSION"
+        	if [ ! -d "${CORE_DST_DIR}" ]; then
+        		mkdir -p "${CORE_DST_DIR}"
+        	fi
+        	cp "${BITSTREAM_FILE}" "${CORE_DST_FILE}"
+        	(cd $BASEDIR_REPO && git add "${CORE_ID}/${CORE_DST_NAME}")
+        	NUM_SUCCESS_CORES=$((NUM_SUCCESS_CORES + 1))
+    	else
+        	echo "** Compilation failed for $PROJECT_NAME"
+        	NUM_ERROR_CORES=$((NUM_ERROR_CORES + 1))
+    	fi
+    	cd -
+    else
+    	echo "** Bitstream file for ${PROJECT_NAME} in version ${VERSION} already exists"
+    fi
+done
+
+echo "* Image generation finished with ${NUM_SUCCESS_CORES} successfully compiled cores and ${NUM_ERROR_CORES} failed cores"
+if [ ${NUM_SUCCESS_CORES} -gt 0 ]; then
+	echo "* Committing changes"
+	git status
+	git commit -m "Committed by github build-images"
+	git push origin
 fi
