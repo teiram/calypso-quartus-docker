@@ -34,7 +34,11 @@ NUM_ERROR_CORES=0
 for CORE_DEFINITION in $(find . -type f -name ${CORE_DEFINITION_TEMPLATE}); do
 	echo "* Processing ${CORE_DEFINITION}"
     SRCPATH="$(dirname $CORE_DEFINITION)"
-    eval $(cat $CORE_DEFINITION)  #TODO: Make this safer
+    unset PROJECT_NAME CORE_ID VERSION BITSTREAM_FILE EXTRA_SUBMODULES
+    # Attempt to safely get variables from core.definition
+    eval $(cat $CORE_DEFINITION | tr -d ';' | awk -F= '
+    	   $1 ~ "CORE_ID|PROJECT_NAME|VERSION|BITSTREAM_FILE|EXTRA_SUBMODULES" { printf "%s=\"%s\"\n", $1, $2 }
+    ')	   
     echo "** Found project: $PROJECT_NAME"
     echo "** Core Id: $CORE_ID"
     echo "** Version: $VERSION"
@@ -46,6 +50,12 @@ for CORE_DEFINITION in $(find . -type f -name ${CORE_DEFINITION_TEMPLATE}); do
     	echo "Generating bitstream file for project ${PROJECT_NAME} in version ${VERSION}"
     	cd $SRCPATH
     	git submodule update --init --recursive .
+    	if [ -v EXTRA_SUBMODULES ]; then
+    		for MODULE in ${EXTRA_SUBMODULES}; do
+    			echo "** Resolving extra submodule at ${MODULE}"
+    			(cd ${MODULE}; git submodule update --init --recursive .)
+    		done
+   		fi
     	$QUARTUS_EXE --flow compile $PROJECT_NAME
     	if [ $? -eq 0 ]; then
         	echo "** Compilation successful for $PROJECT_NAME in version $VERSION"
