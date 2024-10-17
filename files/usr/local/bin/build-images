@@ -77,6 +77,8 @@ done
 
 echo "* Image generation finished with ${NUM_SUCCESS_CORES} successfully compiled cores and ${NUM_ERROR_CORES} failed cores"
 if [ ${NUM_SUCCESS_CORES} -gt 0 ]; then
+	cd $GITHUB_WORKSPACE
+	rm -rf staging
 	echo "* Committing changes"
 	git status
 	git commit -m "Committed by github build-images"
