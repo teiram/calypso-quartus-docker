@@ -37,12 +37,14 @@ for CORE_DEFINITION in $(find . -type f -name ${CORE_DEFINITION_TEMPLATE}); do
     unset PROJECT_NAME CORE_ID VERSION BITSTREAM_FILE EXTRA_SUBMODULES
     # Attempt to safely get variables from core.definition
     eval $(cat $CORE_DEFINITION | tr -d ';' | awk -F= '
-    	   $1 ~ "CORE_ID|PROJECT_NAME|VERSION|BITSTREAM_FILE|EXTRA_SUBMODULES" { printf "%s=\"%s\"\n", $1, $2 }
+    	   $1 ~ "CORE_ID|PROJECT_NAME|VERSION|BITSTREAM_FILE|EXTRA_SUBMODULES|EXTRA_BINARIES" { printf "%s=\"%s\"\n", $1, $2 }
     ')	   
     echo "** Found project: $PROJECT_NAME"
     echo "** Core Id: $CORE_ID"
     echo "** Version: $VERSION"
     echo "** Bistream file: $BITSTREAM_FILE"
+    echo "** Extra submodules: $EXTRA_SUBMODULES"
+    echo "** Extra binaries: $EXTRA_BINARIES"
     CORE_DST_DIR="${GITHUB_WORKSPACE}/${CORE_ID}"
     CORE_DST_NAME="${CORE_ID}-v${VERSION}.rbf"
     CORE_DST_FILE="${CORE_DST_DIR}/${CORE_DST_NAME}"
@@ -55,7 +57,7 @@ for CORE_DEFINITION in $(find . -type f -name ${CORE_DEFINITION_TEMPLATE}); do
     			echo "** Resolving extra submodule at ${MODULE}"
     			(cd ${MODULE}; git submodule update --init --recursive .)
     		done
-   		fi
+        fi
     	$QUARTUS_EXE --flow compile $PROJECT_NAME
     	if [ $? -eq 0 ]; then
         	echo "** Compilation successful for $PROJECT_NAME in version $VERSION"
@@ -64,6 +66,22 @@ for CORE_DEFINITION in $(find . -type f -name ${CORE_DEFINITION_TEMPLATE}); do
         	fi
         	cp "${BITSTREAM_FILE}" "${CORE_DST_FILE}"
         	(cd $BASEDIR_REPO && git add "${CORE_ID}/${CORE_DST_NAME}")
+            if [ -v EXTRA_BINARIES ]; then
+                for EXTRA_BINARY in ${EXTRA_BINARIES}; do
+                    echo "** Staging extra binary: $EXTRA_BINARY"
+                    cp $EXTRA_BINARY $CORE_DST_DIR
+                    BINARY_BASENAME=$(basename $EXTRA_BINARY)
+                    (cd $BASEDIR_REPO && git add "${CORE_ID}/${BINARY_BASENAME}")
+                done
+            fi
+            if [ -d ./extra-binaries ]; then
+                for EXTRA_BINARY in "./extra-binaries/*"; do
+                    echo "** Staging extra binary: $EXTRA_BINARY"
+                    cp $EXTRA_BINARY $CORE_DST_DIR
+                    BINARY_BASENAME=$(basename $EXTRA_BINARY)
+                    (cd $BASEDIR_REPO && git add "${CORE_ID}/${BINARY_BASENAME}")
+                done
+            fi
         	NUM_SUCCESS_CORES=$((NUM_SUCCESS_CORES + 1))
     	else
         	echo "** Compilation failed for $PROJECT_NAME"
